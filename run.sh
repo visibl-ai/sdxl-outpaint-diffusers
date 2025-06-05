@@ -36,7 +36,7 @@ source .venv/bin/activate
 
 # Install requirements
 echo "Installing requirements..."
-pip install -r requirements.txt
+pip install --cache-dir=./venv/pip-cache -r requirements.txt
 
 # Set environment variables for optimal H100 performance
 export CUDA_VISIBLE_DEVICES=0
