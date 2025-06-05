@@ -16,7 +16,7 @@ nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv
 # Create virtual environment if it doesn't exist
 if [ ! -d ".venv" ]; then
     echo "Creating virtual environment..."
-    python3 -m venv venv
+    python3 -m venv .venv
 fi
 
 # Check if HF_TOKEN is set
@@ -36,7 +36,11 @@ source .venv/bin/activate
 
 # Install requirements
 echo "Installing requirements..."
-pip install --cache-dir=./venv/pip-cache -r requirements.txt
+pip install --cache-dir=.venv/pip-cache -r requirements.txt
+if ! pip install --cache-dir=.venv/pip-cache -r requirements.txt; then
+    echo "ERROR: Failed to install requirements"
+    exit 1
+fi
 
 # Set environment variables for optimal H100 performance
 export CUDA_VISIBLE_DEVICES=0
