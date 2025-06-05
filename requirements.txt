@@ -4,5 +4,10 @@ transformers==4.45.0
 accelerate==0.33.0
 diffusers==0.32.2
 huggingface-hub
-Pillow
+Pillow==10.1.0
 opencv-python
+modal
+fastapi[standard]
+uvicorn[standard]
+hf_transfer
+requests==2.31.0
