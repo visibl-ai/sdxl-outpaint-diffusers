@@ -321,8 +321,8 @@ Examples:
                         help="Output file path (default: input_outpainted.png)")
     parser.add_argument("--prompt", "-p", type=str, default="",
                         help="Text prompt for generation (default: empty)")
-    parser.add_argument("--steps", "-s", type=int, default=8,
-                        help="Number of inference steps (default: 8)")
+    parser.add_argument("--steps", "-s", type=int, default=20,
+                        help="Number of inference steps (default: 20)")
     parser.add_argument("--overlap", type=int, default=10,
                         help="Overlap percentage for blending (default: 10)")
     parser.add_argument("--alignment", "-a", type=str, default="Middle",
@@ -338,7 +338,7 @@ Examples:
 
 
 def outpaint_image(image_path, width=None, height=None, left=None, right=None, 
-                   top=None, bottom=None, prompt="", steps=8, overlap=10, 
+                   top=None, bottom=None, prompt="", steps=20, overlap=10, 
                    alignment="Middle", resize_option="Full", custom_resize=50):
     """
     Perform image outpainting with specified parameters.
@@ -511,7 +511,7 @@ def process_single_image(config):
             width=width,
             height=height,
             prompt=config.get('prompt', ''),
-            steps=config.get('steps', 8),
+            steps=config.get('steps', 20),
             overlap=config.get('overlap', 10),
             alignment=config.get('alignment', 'Middle'),
             resize_option=config.get('resize', 'Full'),
@@ -525,7 +525,7 @@ def process_single_image(config):
             top=config.get('top', 0),
             bottom=config.get('bottom', 0),
             prompt=config.get('prompt', ''),
-            steps=config.get('steps', 8),
+            steps=config.get('steps', 20),
             overlap=config.get('overlap', 10),
             alignment=config.get('alignment', 'Middle'),
             resize_option=config.get('resize', 'Full'),
