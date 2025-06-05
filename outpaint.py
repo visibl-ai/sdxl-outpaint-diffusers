@@ -3,64 +3,160 @@
 CLI tool for image outpainting using Stable Diffusion XL with ControlNet.
 
 Usage:
+    # Single image mode
     python outpaint.py --input input.png --left 100 --right 100 --top 50 --bottom 50 [options]
+    
+    # Batch mode with JSON config
+    python outpaint.py --batch config.json
     
 Example:
     python outpaint.py --input input.png --left 100 --right 100 --top 50 --bottom 50 --prompt "beautiful landscape" --output result.png
+    
+Batch config JSON format:
+    [
+        {
+            "input": "image1.png",
+            "output": "output1.png",
+            "left": 100, "right": 100, "top": 0, "bottom": 0,
+            "prompt": "sunset sky"
+        },
+        {
+            "input": "image2.png", 
+            "ratio": "16:9",
+            "alignment": "Left"
+        }
+    ]
 """
+import time
+import datetime
+import logging
+
+# Configure logging early
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger(__name__)
+
+logger.info(f"Script execution started at: {datetime.datetime.now().isoformat()}")
+
+# Time imports
+import_start = time.time()
+logger.info(f"Starting imports at: {datetime.datetime.now().isoformat()}")
 
 import argparse
+logger.info(f"  argparse imported in {time.time() - import_start:.2f}s")
 import sys
+logger.info(f"  sys imported in {time.time() - import_start:.2f}s")
+
+import json
+logger.info(f"  json imported in {time.time() - import_start:.2f}s")
 from pathlib import Path
+logger.info(f"  pathlib imported in {time.time() - import_start:.2f}s")
 from PIL import Image, ImageDraw
+logger.info(f"  PIL imported in {time.time() - import_start:.2f}s")
 import torch
+logger.info(f"  torch imported in {time.time() - import_start:.2f}s")
 from diffusers import AutoencoderKL, TCDScheduler
+logger.info(f"  diffusers imports in {time.time() - import_start:.2f}s")
 from diffusers.models.model_loading_utils import load_state_dict
+logger.info(f"  load_state_dict imported in {time.time() - import_start:.2f}s")
 from huggingface_hub import hf_hub_download
+logger.info(f"  hf_hub_download imported in {time.time() - import_start:.2f}s")
 
 from controlnet_union import ControlNetModel_Union
+logger.info(f"  ControlNetModel_Union imported in {time.time() - import_start:.2f}s")
 from pipeline_fill_sd_xl import StableDiffusionXLFillPipeline
+logger.info(f"  StableDiffusionXLFillPipeline imported in {time.time() - import_start:.2f}s")
+
+logger.info(f"Total import time: {time.time() - import_start:.2f}s")
+
+logger.info(f"Time since script start: {time.time() - import_start:.2f}s")
 
 # Initialize models and pipeline
-print("Initializing models...")
+logger.info(f"Starting model initialization at {datetime.datetime.now().isoformat()}...")
+init_start = time.time()
 
+# Download ControlNet config
+logger.info("Downloading ControlNet config...")
+config_start = time.time()
 config_file = hf_hub_download(
     "xinsir/controlnet-union-sdxl-1.0",
     filename="config_promax.json",
 )
+logger.info(f"Config download completed in {time.time() - config_start:.2f}s")
 
+# Load ControlNet model
+logger.info("Loading ControlNet model...")
+controlnet_start = time.time()
+logger.info("  Loading config...")
 config = ControlNetModel_Union.load_config(config_file)
+logger.info(f"  Config loaded in {time.time() - controlnet_start:.2f}s")
+logger.info("  Creating model from config...")
 controlnet_model = ControlNetModel_Union.from_config(config)
+logger.info(f"  Model created in {time.time() - controlnet_start:.2f}s")
+logger.info("  Downloading model weights...")
+download_start = time.time()
 model_file = hf_hub_download(
     "xinsir/controlnet-union-sdxl-1.0",
     filename="diffusion_pytorch_model_promax.safetensors",
 )
+logger.info(f"  Model weights downloaded in {time.time() - download_start:.2f}s")
+logger.info("  Loading state dict...")
+state_dict_start = time.time()
 state_dict = load_state_dict(model_file)
+logger.info(f"  State dict loaded in {time.time() - state_dict_start:.2f}s")
 model, _, _, _, _ = ControlNetModel_Union._load_pretrained_model(
     controlnet_model, state_dict, model_file, "xinsir/controlnet-union-sdxl-1.0"
 )
+logger.info(f"ControlNet loaded in {time.time() - controlnet_start:.2f}s")
 
 # Ensure CUDA is available
 if not torch.cuda.is_available():
     raise RuntimeError("CUDA is not available. This app requires a GPU.")
 
-# Use the first available GPU (usually cuda:0)
+# Move model to GPU
+logger.info("Moving ControlNet to GPU...")
+gpu_start = time.time()
 device = "cuda:0"
 model.to(device=device, dtype=torch.float16)
+logger.info(f"ControlNet moved to GPU in {time.time() - gpu_start:.2f}s")
 
+# Load VAE
+logger.info("Loading VAE...")
+vae_start = time.time()
+logger.info("  Downloading/loading VAE model...")
 vae = AutoencoderKL.from_pretrained(
     "madebyollin/sdxl-vae-fp16-fix", torch_dtype=torch.float16
-).to(device)
+)
+logger.info(f"  VAE loaded in {time.time() - vae_start:.2f}s")
+logger.info("  Moving VAE to GPU...")
+vae_gpu_start = time.time()
+vae = vae.to(device)
+logger.info(f"  VAE moved to GPU in {time.time() - vae_gpu_start:.2f}s")
+logger.info(f"VAE total time: {time.time() - vae_start:.2f}s")
 
+# Load pipeline
+logger.info("Loading StableDiffusion pipeline...")
+pipe_start = time.time()
+logger.info("  Downloading/loading pipeline components...")
 pipe = StableDiffusionXLFillPipeline.from_pretrained(
     "SG161222/RealVisXL_V5.0_Lightning",
     torch_dtype=torch.float16,
     vae=vae,
     controlnet=model,
     variant="fp16",
-).to(device)
+)
+logger.info(f"  Pipeline created in {time.time() - pipe_start:.2f}s")
+logger.info("  Moving pipeline to GPU...")
+pipe_gpu_start = time.time()
+pipe = pipe.to(device)
 
 pipe.scheduler = TCDScheduler.from_config(pipe.scheduler.config)
+logger.info(f"Pipeline loaded in {time.time() - pipe_start:.2f}s")
+
+logger.info(f"Total initialization time: {time.time() - init_start:.2f}s")
 
 
 def can_expand(source_width, source_height, target_width, target_height, alignment):
@@ -73,6 +169,9 @@ def can_expand(source_width, source_height, target_width, target_height, alignme
 
 
 def prepare_image_and_mask(image, width, height, overlap_percentage, resize_option, custom_resize_percentage, alignment, overlap_left, overlap_right, overlap_top, overlap_bottom):
+    start_time = time.time()
+    logger.info(f"Preparing image and mask - target size: {width}x{height}, alignment: {alignment}")
+    
     target_size = (width, height)
 
     # Calculate the scaling factor to fit the image within the target size
@@ -167,6 +266,7 @@ def prepare_image_and_mask(image, width, height, overlap_percentage, resize_opti
         (right_overlap, bottom_overlap)
     ], fill=0)
 
+    logger.info(f"Image and mask prepared in {time.time() - start_time:.2f}s")
     return background, mask
 
 
@@ -177,22 +277,26 @@ def parse_arguments():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Expand image by 100px on all sides
+  # Single image mode - Expand image by 100px on all sides
   python outpaint.py --input input.png --left 100 --right 100 --top 100 --bottom 100
 
   # Expand only horizontally with custom prompt
   python outpaint.py --input input.png --left 200 --right 200 --top 0 --bottom 0 --prompt "sunset sky"
 
-  # Custom output and inference steps
-  python outpaint.py --input input.png --left 0 --right 0 --top 150 --bottom 150 --output expanded.png --steps 10
-  
-  # Use preset aspect ratios (auto-calculates expansion)
+  # Use preset aspect ratios
   python outpaint.py --input photo.jpg --ratio 16:9
-  python outpaint.py --input portrait.png --ratio 9:16 --prompt "scenic background"
+  
+  # Batch mode - Process multiple images from JSON config
+  python outpaint.py --batch batch_config.json
         """
     )
     
-    parser.add_argument("--input", "-i", type=str, required=True, help="Path to input image")
+    # Add mutually exclusive group for single vs batch mode
+    mode_group = parser.add_mutually_exclusive_group(required=True)
+    mode_group.add_argument("--input", "-i", type=str, help="Path to input image (single mode)")
+    mode_group.add_argument("--batch", type=str, help="Path to JSON config file for batch processing")
+    
+    # Single mode arguments
     parser.add_argument("--left", "-l", type=int, default=0, help="Pixels to expand on the left (default: 0)")
     parser.add_argument("--right", "-r", type=int, default=0, help="Pixels to expand on the right (default: 0)")
     parser.add_argument("--top", "-t", type=int, default=0, help="Pixels to expand on the top (default: 0)")
@@ -230,9 +334,14 @@ def outpaint_image(image_path, width=None, height=None, left=None, right=None,
     Returns:
         PIL.Image: The outpainted image
     """
+    total_start = time.time()
+    
     # Load the input image
+    logger.info(f"Loading input image: {image_path}")
+    load_start = time.time()
     try:
         image = Image.open(image_path).convert("RGB")
+        logger.info(f"Image loaded in {time.time() - load_start:.2f}s - size: {image.size}")
     except Exception as e:
         raise ValueError(f"Failed to load image: {e}")
     
@@ -259,6 +368,7 @@ def outpaint_image(image_path, width=None, height=None, left=None, right=None,
         overlap_bottom = bottom > 0
     
     # Prepare image and mask
+    prep_start = time.time()
     background, mask = prepare_image_and_mask(
         image, 
         target_width, 
@@ -275,129 +385,214 @@ def outpaint_image(image_path, width=None, height=None, left=None, right=None,
     
     # Check if expansion is valid
     if not can_expand(background.width, background.height, target_width, target_height, alignment):
+        logger.info("Expansion not valid for alignment, switching to Middle")
         alignment = "Middle"
     
     # Create control net image
+    logger.info("Creating ControlNet input image...")
+    cnet_start = time.time()
     cnet_image = background.copy()
     cnet_image.paste(0, (0, 0), mask)
+    logger.info(f"ControlNet input created in {time.time() - cnet_start:.2f}s")
     
     # Prepare prompt
     final_prompt = f"{prompt} , high quality, 4k"
+    logger.info(f"Using prompt: {final_prompt}")
     
     # Encode prompt
+    logger.info("Encoding prompt...")
+    encode_start = time.time()
     (
         prompt_embeds,
         negative_prompt_embeds,
         pooled_prompt_embeds,
         negative_pooled_prompt_embeds,
     ) = pipe.encode_prompt(final_prompt, "cuda", True)
+    logger.info(f"Prompt encoded in {time.time() - encode_start:.2f}s")
     
     # Generate image
-    print(f"Generating outpainted image with {steps} steps...")
+    logger.info(f"Starting image generation with {steps} steps...")
+    gen_start = time.time()
     
     # Get the final image from the generator
     image = None
-    for img in pipe(
+    for step_num, img in enumerate(pipe(
         prompt_embeds=prompt_embeds,
         negative_prompt_embeds=negative_prompt_embeds,
         pooled_prompt_embeds=pooled_prompt_embeds,
         negative_pooled_prompt_embeds=negative_pooled_prompt_embeds,
         image=cnet_image,
         num_inference_steps=steps
-    ):
+    )):
         image = img
+        logger.info(f"  Step {step_num + 1}/{steps} completed")
+    
+    logger.info(f"Image generation completed in {time.time() - gen_start:.2f}s")
     
     # Composite the final image (matching app.py logic)
+    logger.info("Compositing final image...")
+    comp_start = time.time()
     image = image.convert("RGBA")
     
     # Resize if needed to match cnet_image size
     if image.size != cnet_image.size:
+        logger.info(f"Resizing generated image from {image.size} to {cnet_image.size}")
         image = image.resize(cnet_image.size, Image.LANCZOS)
     
     cnet_image.paste(image, (0, 0), mask)
+    logger.info(f"Compositing completed in {time.time() - comp_start:.2f}s")
     
+    logger.info(f"Total outpainting time: {time.time() - total_start:.2f}s")
     return cnet_image
 
 
-def main():
-    """Main CLI function."""
-    args = parse_arguments()
-    
+def process_single_image(config):
+    """Process a single image with given configuration."""
     # Validate input file
-    input_path = Path(args.input)
+    input_path = Path(config['input'])
     if not input_path.exists():
-        print(f"Error: Input file '{args.input}' not found.", file=sys.stderr)
-        sys.exit(1)
+        raise FileNotFoundError(f"Input file '{config['input']}' not found")
     
     # Handle ratio mode
-    if args.ratio:
+    width = None
+    height = None
+    if config.get('ratio'):
         # Set target dimensions based on ratio (same as app.py)
-        if args.ratio == "9:16":
+        if config['ratio'] == "9:16":
             width = 720
             height = 1280
-        elif args.ratio == "16:9":
+        elif config['ratio'] == "16:9":
             width = 1280
             height = 720
-        elif args.ratio == "1:1":
+        elif config['ratio'] == "1:1":
             width = 1024
             height = 1024
         
-        print(f"Using {args.ratio} ratio: target {width}x{height}")
+        logger.info(f"Using {config['ratio']} ratio: target {width}x{height}")
     
     # Determine output path
-    if args.output:
-        output_path = Path(args.output)
+    if config.get('output'):
+        output_path = Path(config['output'])
     else:
         output_path = input_path.parent / f"{input_path.stem}_outpainted.png"
     
     # Validate expansion values (only if not using ratio mode)
-    if not args.ratio:
-        if args.left < 0 or args.right < 0 or args.top < 0 or args.bottom < 0:
-            print("Error: Expansion values must be non-negative.", file=sys.stderr)
-            sys.exit(1)
+    if not config.get('ratio'):
+        left = config.get('left', 0)
+        right = config.get('right', 0)
+        top = config.get('top', 0)
+        bottom = config.get('bottom', 0)
         
-        if args.left == 0 and args.right == 0 and args.top == 0 and args.bottom == 0:
-            print("Error: At least one expansion dimension must be greater than 0.", file=sys.stderr)
-            sys.exit(1)
+        if left < 0 or right < 0 or top < 0 or bottom < 0:
+            raise ValueError("Expansion values must be non-negative")
+        
+        if left == 0 and right == 0 and top == 0 and bottom == 0:
+            raise ValueError("At least one expansion dimension must be greater than 0")
+    
+    # Perform outpainting
+    logger.info(f"Starting outpainting process for: {input_path}")
+    process_start = time.time()
+    
+    if config.get('ratio'):
+        result = outpaint_image(
+            input_path,
+            width=width,
+            height=height,
+            prompt=config.get('prompt', ''),
+            steps=config.get('steps', 8),
+            overlap=config.get('overlap', 10),
+            alignment=config.get('alignment', 'Middle'),
+            resize_option=config.get('resize', 'Full'),
+            custom_resize=config.get('custom_resize', 50)
+        )
+    else:
+        result = outpaint_image(
+            input_path,
+            left=config.get('left', 0),
+            right=config.get('right', 0),
+            top=config.get('top', 0),
+            bottom=config.get('bottom', 0),
+            prompt=config.get('prompt', ''),
+            steps=config.get('steps', 8),
+            overlap=config.get('overlap', 10),
+            alignment=config.get('alignment', 'Middle'),
+            resize_option=config.get('resize', 'Full'),
+            custom_resize=config.get('custom_resize', 50)
+        )
+    
+    # Save the result
+    logger.info(f"Saving result to: {output_path}")
+    save_start = time.time()
+    result.save(output_path, "PNG")
+    logger.info(f"Image saved in {time.time() - save_start:.2f}s")
+    
+    logger.info(f"Total process time: {time.time() - process_start:.2f}s")
+    return output_path
+
+
+def main():
+    """Main CLI function."""
+    logger.info(f"Script execution started at: {datetime.datetime.now().isoformat()}")
+    args = parse_arguments()
     
     try:
-        # Perform outpainting
-        print(f"Loading image: {input_path}")
-        
-        if args.ratio:
-            result = outpaint_image(
-                input_path,
-                width=width,
-                height=height,
-                prompt=args.prompt,
-                steps=args.steps,
-                overlap=args.overlap,
-                alignment=args.alignment,
-                resize_option=args.resize,
-                custom_resize=args.custom_resize
-            )
+        if args.batch:
+            # Batch mode
+            logger.info(f"Loading batch configuration from: {args.batch}")
+            with open(args.batch, 'r') as f:
+                batch_configs = json.load(f)
+            
+            if not isinstance(batch_configs, list):
+                raise ValueError("Batch config must be a JSON array")
+            
+            logger.info(f"Processing {len(batch_configs)} images in batch mode")
+            batch_start = time.time()
+            
+            successful = 0
+            failed = 0
+            
+            for i, config in enumerate(batch_configs, 1):
+                logger.info(f"\n{'='*60}")
+                logger.info(f"Processing image {i}/{len(batch_configs)}: {config.get('input', 'unknown')}")
+                
+                try:
+                    output_path = process_single_image(config)
+                    print(f"✓ Image {i}/{len(batch_configs)}: {output_path}")
+                    successful += 1
+                except Exception as e:
+                    logger.error(f"Failed to process image {i}: {e}")
+                    print(f"✗ Image {i}/{len(batch_configs)} failed: {e}", file=sys.stderr)
+                    failed += 1
+            
+            logger.info(f"\n{'='*60}")
+            logger.info(f"Batch processing completed in {time.time() - batch_start:.2f}s")
+            logger.info(f"Successful: {successful}, Failed: {failed}")
+            print(f"\nBatch complete: {successful} successful, {failed} failed")
+            
         else:
-            print(f"Expanding: left={args.left}px, right={args.right}px, top={args.top}px, bottom={args.bottom}px")
-            result = outpaint_image(
-                input_path,
-                left=args.left,
-                right=args.right,
-                top=args.top,
-                bottom=args.bottom,
-                prompt=args.prompt,
-                steps=args.steps,
-                overlap=args.overlap,
-                alignment=args.alignment,
-                resize_option=args.resize,
-                custom_resize=args.custom_resize
-            )
-        
-        # Save the result
-        result.save(output_path, "PNG")
-        print(f"Outpainted image saved to: {output_path}")
-        
+            # Single image mode - convert args to config dict
+            config = {
+                'input': args.input,
+                'output': args.output,
+                'left': args.left,
+                'right': args.right,
+                'top': args.top,
+                'bottom': args.bottom,
+                'ratio': args.ratio,
+                'prompt': args.prompt,
+                'steps': args.steps,
+                'overlap': args.overlap,
+                'alignment': args.alignment,
+                'resize': args.resize,
+                'custom_resize': args.custom_resize
+            }
+            
+            output_path = process_single_image(config)
+            print(f"\nOutpainted image saved to: {output_path}")
+            
     except Exception as e:
-        print(f"Error during outpainting: {e}", file=sys.stderr)
+        logger.error(f"Error: {e}")
+        print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
 
