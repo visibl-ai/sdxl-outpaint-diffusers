@@ -1,0 +1,9 @@
+.venv/
+.vscode/
+__pycache__/
+examples/
+app.py
+modal-examples/
+CLAUDE.md
+test/test_*.png
+.DS_Store
