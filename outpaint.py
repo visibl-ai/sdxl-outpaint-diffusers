@@ -27,6 +27,7 @@ Batch config JSON format:
         }
     ]
 """
+import os
 import time
 import datetime
 import logging
@@ -40,6 +41,17 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 logger.info(f"Script execution started at: {datetime.datetime.now().isoformat()}")
+
+# Set HuggingFace cache directory before any HF imports
+# This ensures all HF libraries use the same cache location
+CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".cache", "huggingface")
+os.environ['HF_HOME'] = CACHE_DIR
+os.environ['HUGGINGFACE_HUB_CACHE'] = os.path.join(CACHE_DIR, "hub")
+os.environ['TRANSFORMERS_CACHE'] = os.path.join(CACHE_DIR, "transformers")
+os.environ['HF_DATASETS_CACHE'] = os.path.join(CACHE_DIR, "datasets")
+
+# Create cache directory if it doesn't exist
+os.makedirs(CACHE_DIR, exist_ok=True)
 
 # Time imports
 import_start = time.time()
@@ -532,7 +544,7 @@ def process_single_image(config):
 
 def main():
     """Main CLI function."""
-    logger.info(f"Script execution started at: {datetime.datetime.now().isoformat()}")
+    logger.info(f"Main function execution started at: {datetime.datetime.now().isoformat()}")
     args = parse_arguments()
     
     try:

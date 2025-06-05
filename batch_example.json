@@ -3,33 +3,12 @@
         "input": "test/test.png",
         "output": "test/batch_1_ratio_9_16.png",
         "ratio": "9:16",
-        "prompt": "beautiful landscape",
-        "steps": 8
+        "steps": 20
     },
     {
-        "input": "test/test.png", 
-        "output": "test/batch_2_ratio_16_9.png",
+        "input": "test/test.png",
+        "output": "test/batch_1_ratio_16_9.png",
         "ratio": "16:9",
-        "alignment": "Left",
-        "resize": "50%"
-    },
-    {
-        "input": "test/test.png",
-        "output": "test/batch_3_expand_sides.png",
-        "left": 200,
-        "right": 200,
-        "top": 0,
-        "bottom": 0,
-        "prompt": "sunset sky"
-    },
-    {
-        "input": "test/test.png",
-        "output": "test/batch_4_expand_all.png", 
-        "left": 100,
-        "right": 100,
-        "top": 150,
-        "bottom": 150,
-        "overlap": 20,
-        "steps": 10
+        "steps": 20
     }
 ]

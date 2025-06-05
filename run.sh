@@ -50,4 +50,4 @@ export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
 export TORCH_ALLOW_TF32_CUBLAS_OVERRIDE=1
 
 # Start the application
-python outpaint.py --input test/test.png --ratio 9:16 --output test/test_9_16.png
+python outpaint.py --batch batch_example.json
