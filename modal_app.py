@@ -54,7 +54,7 @@ results_volume = modal.Volume.from_name("results", create_if_missing=True)
 class Inference:
     @modal.enter()
     def load_pipeline(self):
-        self.pipe = init_model()
+        self.pipe = init_model(cache_dir=CACHE_DIR)
 
     @modal.method()
     def run(self, input: str, left: int = 0, right: int = 0, top: int = 0, bottom: int = 0,

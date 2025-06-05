@@ -77,14 +77,14 @@ logger.info(f"Time since script start: {time.time() - import_start:.2f}s")
 _MODEL_INITIALIZED = False
 pipe = None  # Global variable for the pipeline
 
-def init_model():
+def init_model(*, cache_dir=None):
     global _MODEL_INITIALIZED, pipe
     if _MODEL_INITIALIZED:
         return
     _MODEL_INITIALIZED = True
     # Set HuggingFace cache directory before any HF imports
     # This ensures all HF libraries use the same cache location
-    CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".cache", "huggingface")
+    CACHE_DIR = cache_dir or os.path.join(os.path.dirname(os.path.abspath(__file__)), ".cache", "huggingface")
     os.environ['HF_HOME'] = CACHE_DIR
     os.environ['HUGGINGFACE_HUB_CACHE'] = os.path.join(CACHE_DIR, "hub")
     os.environ['TRANSFORMERS_CACHE'] = os.path.join(CACHE_DIR, "transformers")
