@@ -3,11 +3,17 @@ import argparse
 from typing import Optional
 import io
 from pathlib import Path
+import json
 import requests
 import tempfile
 import os
+import time
+import logging
 from fastapi import FastAPI, Request
 from fastapi.responses import Response
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 CACHE_DIR = "/cache"
 RESULTS_DIR = "/results"  # Define results directory as absolute path
@@ -27,15 +33,13 @@ image = (
     .add_local_file("outpaint.py", "/root/outpaint.py", copy=True)
     .add_local_file("pipeline_fill_sd_xl.py", "/root/pipeline_fill_sd_xl.py", copy=True)
     .add_local_file("controlnet_union.py", "/root/controlnet_union.py", copy=True)
-    .env(
-        {
-            "HF_HUB_ENABLE_HF_TRANSFER": "1",  # faster downloads
-            "HF_HUB_CACHE": CACHE_DIR,
-            "CUDA_VISIBLE_DEVICES": "0",
-            "PYTORCH_CUDA_ALLOC_CONF": "max_split_size_mb:512",
-            "TORCH_ALLOW_TF32_CUBLAS_OVERRIDE": "1",
-        }
-    )
+    .env({
+        "HF_HUB_ENABLE_HF_TRANSFER": "1",  # faster downloads
+        "HF_HUB_CACHE": CACHE_DIR,
+        "CUDA_VISIBLE_DEVICES": "0",
+        "PYTORCH_CUDA_ALLOC_CONF": "max_split_size_mb:512",
+        "TORCH_ALLOW_TF32_CUBLAS_OVERRIDE": "1"
+    })
 )
 
 # Import after defining image to ensure files are available
@@ -56,22 +60,30 @@ class Inference:
     def load_pipeline(self):
         self.pipe = init_model(cache_dir=CACHE_DIR)
 
+    def _upload_to_url(self, file_path: str, url: str):
+        logger.info(f"Uploading to {url}")
+        with open(file_path, 'rb') as f:
+            response = requests.put(url, data=f.read(), headers={"Content-Type": "image/png"})
+            response.raise_for_status()
+        return url
+
     @modal.method()
     def run(self, input: str, left: int = 0, right: int = 0, top: int = 0, bottom: int = 0,
             ratio: str = None, prompt: str = "", steps: int = 20, overlap: int = 10,
-            alignment: str = "Middle", resize: str = "Full", custom_resize: int = 50, batch: str = None):
+            alignment: str = "Middle", resize: str = "Full", custom_resize: int = 50, 
+            batch: str = None, output_url: str = None):
         
         # If input is a URL, download it first
         if input.startswith(('http://', 'https://')):
             input = self._download_and_save_image(input)
         
         # Set output path in results directory
-        output_path = os.path.join(RESULTS_DIR, "output.png")
+        output_path = os.path.join(RESULTS_DIR, f"output_{int(time.time())}.png")
         
         # Create a dict of all arguments except 'self'
         args_dict = {
             'input': input,
-            'output': output_path,  # Specify the output path
+            'output': output_path,
             'left': left,
             'right': right,
             'top': top,
@@ -90,10 +102,15 @@ class Inference:
         # Run inference
         result_path = inference_fn(is_cli=False, args=args)
         
-        # Read the result and return as bytes
-        with open(result_path, 'rb') as f:
-            return f.read()
+        # If output URL (typically a signed URL) provided, upload and return the URL
+        # Otherwise just return the local path
+        if output_url:
+            logger.info("Using provided output URL for upload")
+            return self._upload_to_url(result_path, output_url)
         
+        logger.info(f"No output URL provided, returning local path: {result_path}")
+        return result_path
+                
     def _download_and_save_image(self, url: str) -> str:
         """Download image from URL and save to a temporary file."""
         try:
@@ -114,8 +131,8 @@ class Inference:
 @web_app.post("/inference")
 async def inference_endpoint(request: Request):
     data = await request.json()
-    result = await Inference().run.remote.aio(**data)
-    return Response(content=result, media_type="image/png")
+    uploaded_url = await Inference().run.remote.aio(**data)
+    return {"url": uploaded_url}
 
 @app.function(image=image)
 @modal.asgi_app()
