@@ -11,6 +11,7 @@ import time
 import logging
 from fastapi import FastAPI, Request
 from fastapi.responses import Response
+import torch
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -43,7 +44,7 @@ image = (
 )
 
 # Import after defining image to ensure files are available
-from outpaint import init_model, main as inference_fn
+from outpaint import load_model, setup_model, main as inference_fn
 
 cache_volume = modal.Volume.from_name("hf-hub-cache", create_if_missing=True)
 results_volume = modal.Volume.from_name("results", create_if_missing=True)
@@ -54,11 +55,22 @@ results_volume = modal.Volume.from_name("results", create_if_missing=True)
     timeout=5 * MINUTES,
     volumes={CACHE_DIR: cache_volume, RESULTS_DIR: results_volume},
     secrets=[modal.Secret.from_name("huggingface-token")],
+    enable_memory_snapshot=True,
 )
 class Inference:
-    @modal.enter()
-    def load_pipeline(self):
-        self.pipe = init_model(cache_dir=CACHE_DIR)
+    @modal.enter(snap=True)
+    def load_base_models(self):
+        """Load the base models which are snapshot-friendly"""
+        logger.info("Loading base models (with snapshot)")
+        self.model, self.vae, _ = load_model(cache_dir=CACHE_DIR, load_pipeline=False)
+
+    @modal.enter(snap=False)
+    def setup_pipeline(self):
+        """Setup the pipeline which isn't snapshot-friendly"""
+        logger.info("Setting up pipeline (without snapshot)")
+        self.pipe = setup_model(self.model, self.vae)
+        # Clear any unused memory after setup
+        torch.cuda.empty_cache()
 
     def _upload_to_url(self, file_path: str, url: str):
         logger.info(f"Uploading to {url}")

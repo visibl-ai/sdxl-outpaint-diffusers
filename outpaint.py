@@ -78,10 +78,28 @@ _MODEL_INITIALIZED = False
 pipe = None  # Global variable for the pipeline
 
 def init_model(*, cache_dir=None):
+    """Initialize model by loading components and moving them to GPU."""
     global _MODEL_INITIALIZED, pipe
     if _MODEL_INITIALIZED:
-        return
+        return pipe
+    
+    # Ensure CUDA is available
+    if not torch.cuda.is_available():
+        raise RuntimeError("CUDA is not available. This app requires a GPU.")
+
+    # Load model components on CPU first
+    model, vae, pipe = load_model(cache_dir=cache_dir)
+
+    # Move to GPU and setup
+    pipe = setup_model(model, vae)
     _MODEL_INITIALIZED = True
+
+    return pipe
+
+
+def load_model(*, cache_dir=None, load_pipeline=True):
+    """Load model components on CPU before GPU initialization."""
+    global pipe
     # Set HuggingFace cache directory before any HF imports
     # This ensures all HF libraries use the same cache location
     CACHE_DIR = cache_dir or os.path.join(os.path.dirname(os.path.abspath(__file__)), ".cache", "huggingface")
@@ -94,7 +112,7 @@ def init_model(*, cache_dir=None):
     os.makedirs(CACHE_DIR, exist_ok=True)
 
     # Initialize models and pipeline
-    logger.info(f"Starting model initialization at {datetime.datetime.now().isoformat()}...")
+    logger.info(f"Starting model loading at {datetime.datetime.now().isoformat()}...")
     init_start = time.time()
 
     # Download ControlNet config
@@ -131,17 +149,6 @@ def init_model(*, cache_dir=None):
     )
     logger.info(f"ControlNet loaded in {time.time() - controlnet_start:.2f}s")
 
-    # Ensure CUDA is available
-    if not torch.cuda.is_available():
-        raise RuntimeError("CUDA is not available. This app requires a GPU.")
-
-    # Move model to GPU
-    logger.info("Moving ControlNet to GPU...")
-    gpu_start = time.time()
-    device = "cuda:0"
-    model.to(device=device, dtype=torch.float16)
-    logger.info(f"ControlNet moved to GPU in {time.time() - gpu_start:.2f}s")
-
     # Load VAE
     logger.info("Loading VAE...")
     vae_start = time.time()
@@ -150,32 +157,63 @@ def init_model(*, cache_dir=None):
         "madebyollin/sdxl-vae-fp16-fix", torch_dtype=torch.float16
     )
     logger.info(f"  VAE loaded in {time.time() - vae_start:.2f}s")
-    logger.info("  Moving VAE to GPU...")
+
+    # Load pipeline only if requested
+    pipe = None
+    if load_pipeline:
+        logger.info("Loading StableDiffusion pipeline...")
+        pipe_start = time.time()
+        logger.info("  Downloading/loading pipeline components...")
+        pipe = StableDiffusionXLFillPipeline.from_pretrained(
+            "SG161222/RealVisXL_V5.0_Lightning",
+            torch_dtype=torch.float16,
+            vae=vae,
+            controlnet=model,
+            variant="fp16",
+        )
+        logger.info(f"  Pipeline created in {time.time() - pipe_start:.2f}s")
+
+    logger.info(f"Total CPU loading time: {time.time() - init_start:.2f}s")
+    return model, vae, pipe
+
+def setup_model(model, vae):
+    """Move model components to GPU and configure them."""
+    global pipe
+    device = "cuda:0"
+    
+    # Move model to GPU
+    logger.info("Moving ControlNet to GPU...")
+    gpu_start = time.time()
+    model.to(device=device, dtype=torch.float16)
+    logger.info(f"ControlNet moved to GPU in {time.time() - gpu_start:.2f}s")
+
+    # Move VAE to GPU
+    logger.info("Moving VAE to GPU...")
     vae_gpu_start = time.time()
     vae = vae.to(device)
-    logger.info(f"  VAE moved to GPU in {time.time() - vae_gpu_start:.2f}s")
-    logger.info(f"VAE total time: {time.time() - vae_start:.2f}s")
+    logger.info(f"VAE moved to GPU in {time.time() - vae_gpu_start:.2f}s")
 
-    # Load pipeline
-    logger.info("Loading StableDiffusion pipeline...")
-    pipe_start = time.time()
-    logger.info("  Downloading/loading pipeline components...")
-    pipe = StableDiffusionXLFillPipeline.from_pretrained(
-        "SG161222/RealVisXL_V5.0_Lightning",
-        torch_dtype=torch.float16,
-        vae=vae,
-        controlnet=model,
-        variant="fp16",
-    )
-    logger.info(f"  Pipeline created in {time.time() - pipe_start:.2f}s")
-    logger.info("  Moving pipeline to GPU...")
+    # Create or move pipeline to GPU and configure scheduler
+    logger.info("Moving pipeline to GPU...")
     pipe_gpu_start = time.time()
+    
+    if pipe is None:
+        logger.info("Creating new pipeline...")
+        pipe = StableDiffusionXLFillPipeline.from_pretrained(
+            "SG161222/RealVisXL_V5.0_Lightning",
+            torch_dtype=torch.float16,
+            vae=vae,
+            controlnet=model,
+            variant="fp16",
+        )
+    
     pipe = pipe.to(device)
-
     pipe.scheduler = TCDScheduler.from_config(pipe.scheduler.config)
-    logger.info(f"Pipeline loaded in {time.time() - pipe_start:.2f}s")
+    pipe.vae = vae
+    pipe.controlnet = model
+    
+    logger.info(f"Pipeline moved to GPU in {time.time() - pipe_gpu_start:.2f}s")
 
-    logger.info(f"Total initialization time: {time.time() - init_start:.2f}s")
     return pipe
 
 
