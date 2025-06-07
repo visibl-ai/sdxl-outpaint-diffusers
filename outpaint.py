@@ -31,6 +31,8 @@ import os
 import time
 import datetime
 import logging
+import requests
+import tempfile
 
 # Configure logging early
 logging.basicConfig(
@@ -507,7 +509,11 @@ def outpaint_image(image_path, width=None, height=None, left=None, right=None,
 def process_single_image(config):
     """Process a single image with given configuration."""
     # Validate input file
-    input_path = Path(config['input'])
+    if config['input'].startswith(('http://', 'https://')):
+        input_path = Path(download_and_save_image(config['input']))
+    else:
+        input_path = Path(config['input'])
+
     if not input_path.exists():
         raise FileNotFoundError(f"Input file '{config['input']}' not found")
     
@@ -587,6 +593,23 @@ def process_single_image(config):
     logger.info(f"Total process time: {time.time() - process_start:.2f}s")
     return output_path
 
+def download_and_save_image(url: str) -> str:
+    """Download image from URL and save to a temporary file."""
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        
+        # Create a temporary file with .png extension
+        temp_dir = tempfile.mkdtemp()
+        temp_path = os.path.join(temp_dir, "input.png")
+        
+        with open(temp_path, 'wb') as f:
+            f.write(response.content)
+        
+        return temp_path
+    except Exception as e:
+        raise ValueError(f"Failed to download image from URL: {e}")
+
 
 def main(*, is_cli: bool = True, args = None):
     """Main CLI function."""
@@ -597,18 +620,22 @@ def main(*, is_cli: bool = True, args = None):
     try:
         if args.batch:
             # Batch mode
-            logger.info(f"Loading batch configuration from: {args.batch}")
-            with open(args.batch, 'r') as f:
-                batch_configs = json.load(f)
-            
-            if not isinstance(batch_configs, list):
-                raise ValueError("Batch config must be a JSON array")
+            if is_cli:
+                logger.info(f"Loading batch configuration from: {args.batch}")
+                with open(args.batch, 'r') as f:
+                    batch_configs = json.load(f)
+            else:
+                batch_configs = args.batch
+                
+                if not isinstance(batch_configs, list):
+                    raise ValueError("Batch config must be a JSON array")
             
             logger.info(f"Processing {len(batch_configs)} images in batch mode")
             batch_start = time.time()
             
             successful = 0
             failed = 0
+            output_paths = []
             
             for i, config in enumerate(batch_configs, 1):
                 logger.info(f"\n{'='*60}")
@@ -617,6 +644,7 @@ def main(*, is_cli: bool = True, args = None):
                 try:
                     output_path = process_single_image(config)
                     print(f"✓ Image {i}/{len(batch_configs)}: {output_path}")
+                    output_paths.append(output_path)
                     successful += 1
                 except Exception as e:
                     logger.error(f"Failed to process image {i}: {e}")
@@ -627,7 +655,8 @@ def main(*, is_cli: bool = True, args = None):
             logger.info(f"Batch processing completed in {time.time() - batch_start:.2f}s")
             logger.info(f"Successful: {successful}, Failed: {failed}")
             print(f"\nBatch complete: {successful} successful, {failed} failed")
-            
+
+            return output_paths
         else:
             # Single image mode - convert args to config dict
             config = {
@@ -648,7 +677,7 @@ def main(*, is_cli: bool = True, args = None):
             
             output_path = process_single_image(config)
             print(f"\nOutpainted image saved to: {output_path}")
-            return output_path
+            return [output_path]
             
     except Exception as e:
         logger.error(f"Error: {e}")

@@ -44,7 +44,7 @@ image = (
 )
 
 # Import after defining image to ensure files are available
-from outpaint import load_model, setup_model, main as inference_fn
+from outpaint import download_and_save_image, load_model, setup_model, main as inference_fn
 
 cache_volume = modal.Volume.from_name("hf-hub-cache", create_if_missing=True)
 results_volume = modal.Volume.from_name("results", create_if_missing=True)
@@ -80,14 +80,14 @@ class Inference:
         return url
 
     @modal.method()
-    def run(self, input: str, left: int = 0, right: int = 0, top: int = 0, bottom: int = 0,
+    def run(self, input: str = None, left: int = 0, right: int = 0, top: int = 0, bottom: int = 0,
             ratio: str = None, prompt: str = "", steps: int = 20, overlap: int = 10,
             alignment: str = "Middle", resize: str = "Full", custom_resize: int = 50, 
-            batch: str = None, output_url: str = None):
+            batch: list = None, output_url: str = None):
         
         # If input is a URL, download it first
-        if input.startswith(('http://', 'https://')):
-            input = self._download_and_save_image(input)
+        if input and input.startswith(('http://', 'https://')):
+            input = download_and_save_image(input)
         
         # Set output path in results directory
         output_path = os.path.join(RESULTS_DIR, f"output_{int(time.time())}.png")
@@ -112,37 +112,29 @@ class Inference:
         args = argparse.Namespace(**args_dict)
         
         # Run inference
-        result_path = inference_fn(is_cli=False, args=args)
+        result_paths = inference_fn(is_cli=False, args=args)
+
+        # Process the results
+        result = []
+        for i, result_path in enumerate(result_paths):
+            output_url = batch[i]['output_url'] if batch else output_url
+            # If output URL (typically a signed URL) provided, upload and return the URL
+            # Otherwise just return the local path
+            if output_url:
+                logger.info("Using provided output URL for upload")
+                result.append(self._upload_to_url(result_path, output_url))
+            else:
+                logger.info(f"No output URL provided, returning local path: {result_path}")
+                result.append(result_path)
         
-        # If output URL (typically a signed URL) provided, upload and return the URL
-        # Otherwise just return the local path
-        if output_url:
-            logger.info("Using provided output URL for upload")
-            return self._upload_to_url(result_path, output_url)
-        
-        logger.info(f"No output URL provided, returning local path: {result_path}")
-        return result_path
-                
-    def _download_and_save_image(self, url: str) -> str:
-        """Download image from URL and save to a temporary file."""
-        try:
-            response = requests.get(url, timeout=10)
-            response.raise_for_status()
-            
-            # Create a temporary file with .png extension
-            temp_dir = tempfile.mkdtemp()
-            temp_path = os.path.join(temp_dir, "input.png")
-            
-            with open(temp_path, 'wb') as f:
-                f.write(response.content)
-            
-            return temp_path
-        except Exception as e:
-            raise ValueError(f"Failed to download image from URL: {e}")
+        return result
 
 @web_app.post("/inference")
 async def inference_endpoint(request: Request):
     data = await request.json()
+    if not data.get('input') and not data.get('batch'):
+        return {"error": "Either input or batch must be provided"}
+
     uploaded_url = await Inference().run.remote.aio(**data)
     return {"url": uploaded_url}
 
