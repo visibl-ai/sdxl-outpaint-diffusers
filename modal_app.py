@@ -9,7 +9,8 @@ import tempfile
 import os
 import time
 import logging
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException, Header, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import Response
 import torch
 
@@ -129,8 +130,20 @@ class Inference:
         
         return result
 
+async def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer())):
+    OUTPAINT_API_KEY = os.environ.get("OUTPAINT_API_KEY")
+    
+    if not OUTPAINT_API_KEY:
+        logger.error("API key not configured in secrets")
+        raise HTTPException(status_code=500, detail="API key not configured")
+        
+    if credentials.credentials != OUTPAINT_API_KEY:
+        logger.warning("Invalid API key provided")
+        raise HTTPException(status_code=401, detail="Invalid API key")
+
+
 @web_app.post("/inference")
-async def inference_endpoint(request: Request):
+async def inference_endpoint(request: Request, api_key: str = Depends(verify_api_key)):
     data = await request.json()
     if not data.get('input') and not data.get('batch'):
         return {"error": "Either input or batch must be provided"}
@@ -138,7 +151,7 @@ async def inference_endpoint(request: Request):
     uploaded_url = await Inference().run.remote.aio(**data)
     return {"url": uploaded_url}
 
-@app.function(image=image)
+@app.function(image=image, secrets=[modal.Secret.from_name("custom-secret")])
 @modal.asgi_app()
 def fastapi_app():
     return web_app
