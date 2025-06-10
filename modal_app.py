@@ -13,6 +13,7 @@ from fastapi import FastAPI, Request, HTTPException, Header, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import Response
 import torch
+import asyncio
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -148,8 +149,12 @@ async def inference_endpoint(request: Request, api_key: str = Depends(verify_api
     if not data.get('input') and not data.get('batch'):
         return {"error": "Either input or batch must be provided"}
 
-    uploaded_url = await Inference().run.remote.aio(**data)
-    return {"url": uploaded_url}
+    try:
+        asyncio.create_task(Inference().run.remote.aio(**data))
+        return {"success": True}
+    except Exception as e:
+        logger.error(f"Error in inference: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.function(image=image, secrets=[modal.Secret.from_name("custom-secret")])
 @modal.asgi_app()
