@@ -147,26 +147,18 @@ class OutpaintInference:
             logger.error(f"Error in batch inference: {str(e)}", exc_info=True)
             raise e
 
-@app.cls(
-    image=image,
-    cpu=1,  # Use CPU instead of GPU
-    timeout=1 * MINUTES,
-    volumes={CACHE_DIR: cache_volume, RESULTS_DIR: results_volume},
-    secrets=[modal.Secret.from_name("huggingface-token")],
-    enable_memory_snapshot=True,
-    retries=3,
-)
-class OutpaintEndpoint:
-    @modal.fastapi_endpoint(method="POST", docs=True)
-    async def web(self, body: dict):
-        """FastAPI endpoint for batched inference"""
-        if not body.get("input"):
-            raise HTTPException(status_code=400, detail="No input provided")
 
-        # Start the batch processing without waiting
-        handle = OutpaintInference().run_batch.spawn(body)
-        logger.info(f"Batch processing started: {handle}")
-        return {"status": "processing", "message": "Batch processing started", "job_id": handle.object_id}
+@app.function(image=image, cpu=0.25, memory=512)
+@modal.fastapi_endpoint(method="POST")
+def web(body: dict):
+    """FastAPI endpoint for batched inference"""
+    if not body.get("input"):
+        raise HTTPException(status_code=400, detail="No input provided")
+
+    # Start the batch processing without waiting
+    handle = OutpaintInference().run_batch.spawn(body)
+    logger.info(f"Batch processing started: {handle}")
+    return {"status": "processing", "message": "Batch processing started", "job_id": handle.object_id}
 
 
 async def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer())):
