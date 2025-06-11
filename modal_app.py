@@ -7,6 +7,7 @@ import logging
 from fastapi import HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import torch
+from urllib.parse import urlparse, urlunparse
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -73,12 +74,24 @@ class OutpaintInference:
         with open(file_path, "rb") as f:
             response = requests.put(url, data=f.read(), headers={"Content-Type": "image/png"})
             response.raise_for_status()
-        return url
+        
+        # Extract the base URL by removing query parameters
+        parsed = urlparse(url)
+        # Reconstruct URL without query parameters
+        base_url = urlunparse((
+            parsed.scheme,
+            parsed.netloc,
+            parsed.path,
+            '',  # params
+            '',  # query
+            ''   # fragment
+        ))
+        return base_url
     
     def run(self, input: str = None, left: int = 0, right: int = 0, top: int = 0, bottom: int = 0,
         ratio: str = None, prompt: str = "", steps: int = 20, overlap: int = 10,
         alignment: str = "Middle", resize: str = "Full", custom_resize: int = 50, 
-        batch: list = None, output_url: str = None):
+        batch: list = None, output_url: str = None, callback_url: str = None, result_key: str = None):
         
         # If input is a URL, download it first
         if input and input.startswith(('http://', 'https://')):
@@ -110,17 +123,24 @@ class OutpaintInference:
         result_paths = inference_fn(is_cli=False, args=args)
 
         # Process the results
-        result = []
+        result = {}
         for i, result_path in enumerate(result_paths):
+            result_key = batch[i].get("result_key") if batch else result_key
+            result_key = result_key or str(i)
+
             output_url = batch[i]['output_url'] if batch else output_url
             # If output URL (typically a signed URL) provided, upload and return the URL
             # Otherwise just return the local path
             if output_url:
                 logger.info("Using provided output URL for upload")
-                result.append(self._upload_to_url(result_path, output_url))
+                result[result_key] = self._upload_to_url(result_path, output_url)
             else:
                 logger.info(f"No output URL provided, returning local path: {result_path}")
-                result.append(result_path)
+                result[result_key] = result_path
+            
+            callback_url = batch[i].get("callback_url") if batch else None
+            if callback_url:
+                self._post_to_callback(callback_url, result)
 
         return result
 
@@ -140,13 +160,14 @@ class OutpaintInference:
     @modal.batched(max_batch_size=50, wait_ms=5000)
     async def run_batch(self, input: list[dict]) -> list[str]:
         """Process a batch of inference requests"""
+        # Use first callback URL for final callback with all results
         callback_url = input[0].get("callback_url") if input else None
         try:
             # Get the valid parameter names from the run method
             valid_params = {
                 "input", "left", "right", "top", "bottom", "ratio", "prompt",
                 "steps", "overlap", "alignment", "resize", "custom_resize",
-                "batch", "output_url",
+                "batch", "output_url", "callback_url", "result_key",
             }
             # Filter each input dict to only include valid parameters
             filtered_inputs = [
@@ -159,6 +180,7 @@ class OutpaintInference:
             if callback_url:
                 self._post_to_callback(callback_url, {"status": "completed", "results": results})
 
+            # Modal batched function expects a list
             return results
         except Exception as e:
             logger.error(f"Error in batch inference: {str(e)}", exc_info=True)

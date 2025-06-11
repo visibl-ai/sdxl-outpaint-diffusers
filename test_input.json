@@ -10,5 +10,7 @@
     "overlap": 10,
     "alignment": "Middle",
     "resize": "Full",
-    "custom_resize": 50
+    "custom_resize": 50,
+    "callback_url": "https://europe-west1-visibl-rtdb-dev.cloudfunctions.net/v1ModalCallback",
+    "output_url": "https://storage.googleapis.com/model-testing-results/modal/cb001.png?x-goog-signature=9615e5625116982a29320664b20e9d10369321033cb8d2b5c211edc79d721e747815c991ba962d329da53f55e870d47593334e51f86970e10ca33c73a1cc317c63c91f76f530f6e29d37aa34d445452b4e4b189a2b870cc32a7cf8df56dd4a9b68ca4c1df281ad7a75e632b54992ef584d156f85fdebe7fbf0293f1c7b7f120dece0de5c702b5e51c47559eb3b82b92cd147cef49d7b06f15db4d82a034adf35c551acc79321aa216aa93d7e62ad1ea94fb95ab6aa79ea67078521f490740ccac3adb16126bcc7b748c9a8517c3b4e4d94e2c8dfd55d91b2ab07a2cfebd4493990ea170843aa90d4ce0762b13c9e4b800c2c05ee2c8dbbc6b7818070031d2a76&x-goog-algorithm=GOOG4-RSA-SHA256&x-goog-credential=visibl-rtdb-dev%40appspot.gserviceaccount.com%2F20250611%2Fus%2Fstorage%2Fgoog4_request&x-goog-date=20250611T120054Z&x-goog-expires=604800&x-goog-signedheaders=host"
   }

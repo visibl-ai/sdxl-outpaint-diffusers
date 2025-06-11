@@ -37,12 +37,17 @@ def run_benchmark(num_requests: int, input_file: str):
     # Create and spawn tasks
     tasks = []
     for _ in range(num_requests):
+        # Set unique result key for each request
+        test_data['result_key'] = f'test_{time.time()}'
+        print(f"Submitting request {test_data['result_key']}")
         task = infer.spawn(test_data)
+        print(f"Task {task.object_id} spawned")
         tasks.append(task)
     
     # Wait for all tasks to complete
+    print("Waiting for all tasks to complete...")
     results = [task.get() for task in tasks]
-    
+    print(f"{len(results)} of {num_requests} tasks completed ✓")
     end_time = time.time()
     total_time = end_time - start_time
     
