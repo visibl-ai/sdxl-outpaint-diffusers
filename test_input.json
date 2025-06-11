@@ -1,6 +1,14 @@
 {
     "input": "https://storage.googleapis.com/visibl-public/test_images/test.png",
-    "left": 100,
+    "prompt": "a beautiful landscape",
+    "left": 0,
     "right": 100,
-    "output_url": "https://storage.googleapis.com/model-testing-results/modal-results/ouput-002.png?x-goog-signature=18dbdb52c9fdb4c070edd397b2090ac98db6426c198c92dcb8450c7515e9b7f5749aefcf66a44652d8d284fd251160b1d7d946f36acc80cfc4e6e4863febcfe01394e7d1b648bf2ca669763d955e7a348351a3f586cdfe7b7fc24cd4dfb05845878de74a7fe81ffbb22f1e1f968ca13782a8502e441a4b64e15928ac276aecdf2bb71ee6d005cbbc9a21357c298b7fe48ea7b22c1ff99c212917158
-}
+    "top": 0,
+    "bottom": 100,
+    "ratio": "1:1",
+    "steps": 20,
+    "overlap": 10,
+    "alignment": "Middle",
+    "resize": "Full",
+    "custom_resize": 50
+  }
