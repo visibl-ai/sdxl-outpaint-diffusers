@@ -124,9 +124,23 @@ class OutpaintInference:
 
         return result
 
+    def _post_to_callback(self, callback_url: str, data: dict):
+        """Helper method to post data to callback URL"""
+        try:
+            response = requests.post(
+                callback_url,
+                json=data,
+                headers={"Content-Type": "application/json"}
+            )
+            response.raise_for_status()
+            logger.info(f"Successfully posted to callback URL: {callback_url}")
+        except Exception as e:
+            logger.error(f"Failed to post to callback URL: {str(e)}", exc_info=True)
+
     @modal.batched(max_batch_size=50, wait_ms=5000)
     async def run_batch(self, input: list[dict]) -> list[str]:
         """Process a batch of inference requests"""
+        callback_url = input[0].get("callback_url") if input else None
         try:
             # Get the valid parameter names from the run method
             valid_params = {
@@ -140,11 +154,17 @@ class OutpaintInference:
                 for input_dict in input
             ]
             results = [self.run(**input_dict) for input_dict in filtered_inputs]
-            logger.info(f"run_batch results: {results}")
-            logger.info(f"run_batch results length: {len(results)}")
+
+            # If callback URL is provided, post results
+            if callback_url:
+                self._post_to_callback(callback_url, {"status": "completed", "results": results})
+
             return results
         except Exception as e:
             logger.error(f"Error in batch inference: {str(e)}", exc_info=True)
+            # If callback URL is provided, post error
+            if callback_url:
+                self._post_to_callback(callback_url, {"status": "error", "error": str(e)})
             raise e
 
 

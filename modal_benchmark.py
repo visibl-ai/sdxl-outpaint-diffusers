@@ -52,7 +52,7 @@ def run_benchmark(num_requests: int, input_file: str):
     total_cost = cost_per_second * total_time
     
     # Print results
-    print("\nLocal execution time is highly inaccurate (off by more then 5 seconds!!!)")
+    print("\nLocal execution time is highly inaccurate (off by more than 5 seconds!!!)")
     print("\nPlease refer to https://modal.com/apps/visibl/main/deployed/outpaint instead")
     print("\nBenchmark Results:")
     print(f"Total Requests: {num_requests}")
