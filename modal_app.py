@@ -1,19 +1,12 @@
 import modal
 import argparse
-from typing import Optional
-import io
-from pathlib import Path
-import json
 import requests
-import tempfile
 import os
 import time
 import logging
-from fastapi import FastAPI, Request, HTTPException, Header, Depends
+from fastapi import HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from fastapi.responses import Response
 import torch
-import asyncio
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -23,7 +16,6 @@ RESULTS_DIR = "/results"  # Define results directory as absolute path
 MINUTES = 60
 
 app = modal.App("outpaint")
-web_app = FastAPI()
 
 # Create the base image and include local dependencies
 image = (
@@ -58,34 +50,35 @@ results_volume = modal.Volume.from_name("results", create_if_missing=True)
     volumes={CACHE_DIR: cache_volume, RESULTS_DIR: results_volume},
     secrets=[modal.Secret.from_name("huggingface-token")],
     enable_memory_snapshot=True,
+    retries=0,
+    max_containers=3,
 )
-class Inference:
+class OutpaintInference:
     @modal.enter(snap=True)
     def load_base_models(self):
         """Load the base models which are snapshot-friendly"""
         logger.info("Loading base models (with snapshot)")
-        self.model, self.vae, _ = load_model(cache_dir=CACHE_DIR, load_pipeline=False)
+        self._model, self._vae, _ = load_model(cache_dir=CACHE_DIR, load_pipeline=False)
 
     @modal.enter(snap=False)
     def setup_pipeline(self):
         """Setup the pipeline which isn't snapshot-friendly"""
         logger.info("Setting up pipeline (without snapshot)")
-        self.pipe = setup_model(self.model, self.vae)
+        self._pipe = setup_model(self._model, self._vae)
         # Clear any unused memory after setup
         torch.cuda.empty_cache()
 
     def _upload_to_url(self, file_path: str, url: str):
         logger.info(f"Uploading to {url}")
-        with open(file_path, 'rb') as f:
+        with open(file_path, "rb") as f:
             response = requests.put(url, data=f.read(), headers={"Content-Type": "image/png"})
             response.raise_for_status()
         return url
-
-    @modal.method()
+    
     def run(self, input: str = None, left: int = 0, right: int = 0, top: int = 0, bottom: int = 0,
-            ratio: str = None, prompt: str = "", steps: int = 20, overlap: int = 10,
-            alignment: str = "Middle", resize: str = "Full", custom_resize: int = 50, 
-            batch: list = None, output_url: str = None):
+        ratio: str = None, prompt: str = "", steps: int = 20, overlap: int = 10,
+        alignment: str = "Middle", resize: str = "Full", custom_resize: int = 50, 
+        batch: list = None, output_url: str = None):
         
         # If input is a URL, download it first
         if input and input.startswith(('http://', 'https://')):
@@ -128,8 +121,53 @@ class Inference:
             else:
                 logger.info(f"No output URL provided, returning local path: {result_path}")
                 result.append(result_path)
-        
+
         return result
+
+    @modal.batched(max_batch_size=50, wait_ms=5000)
+    async def run_batch(self, input: list[dict]) -> list[str]:
+        """Process a batch of inference requests"""
+        try:
+            # Get the valid parameter names from the run method
+            valid_params = {
+                "input", "left", "right", "top", "bottom", "ratio", "prompt",
+                "steps", "overlap", "alignment", "resize", "custom_resize",
+                "batch", "output_url",
+            }
+            # Filter each input dict to only include valid parameters
+            filtered_inputs = [
+                {k: v for k, v in input_dict.items() if k in valid_params}
+                for input_dict in input
+            ]
+            results = [self.run(**input_dict) for input_dict in filtered_inputs]
+            logger.info(f"run_batch results: {results}")
+            logger.info(f"run_batch results length: {len(results)}")
+            return results
+        except Exception as e:
+            logger.error(f"Error in batch inference: {str(e)}", exc_info=True)
+            raise e
+
+@app.cls(
+    image=image,
+    cpu=1,  # Use CPU instead of GPU
+    timeout=1 * MINUTES,
+    volumes={CACHE_DIR: cache_volume, RESULTS_DIR: results_volume},
+    secrets=[modal.Secret.from_name("huggingface-token")],
+    enable_memory_snapshot=True,
+    retries=3,
+)
+class OutpaintEndpoint:
+    @modal.fastapi_endpoint(method="POST", docs=True)
+    async def web(self, body: dict):
+        """FastAPI endpoint for batched inference"""
+        if not body.get("input"):
+            raise HTTPException(status_code=400, detail="No input provided")
+
+        # Start the batch processing without waiting
+        handle = OutpaintInference().run_batch.spawn(body)
+        logger.info(f"Batch processing started: {handle}")
+        return {"status": "processing", "message": "Batch processing started", "job_id": handle.object_id}
+
 
 async def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer())):
     OUTPAINT_API_KEY = os.environ.get("OUTPAINT_API_KEY")
@@ -141,24 +179,5 @@ async def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(HTT
     if credentials.credentials != OUTPAINT_API_KEY:
         logger.warning("Invalid API key provided")
         raise HTTPException(status_code=401, detail="Invalid API key")
-
-
-@web_app.post("/inference")
-async def inference_endpoint(request: Request, api_key: str = Depends(verify_api_key)):
-    data = await request.json()
-    if not data.get('input') and not data.get('batch'):
-        return {"error": "Either input or batch must be provided"}
-
-    try:
-        asyncio.create_task(Inference().run.remote.aio(**data))
-        return {"success": True}
-    except Exception as e:
-        logger.error(f"Error in inference: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.function(image=image, secrets=[modal.Secret.from_name("custom-secret")])
-@modal.asgi_app()
-def fastapi_app():
-    return web_app
 
 
