@@ -147,9 +147,21 @@ class OutpaintInference:
     def _post_to_callback(self, callback_url: str, data: dict):
         """Helper method to post data to callback URL"""
         try:
+            # Convert any PosixPath objects to strings in the data
+            def convert_paths(obj):
+                if isinstance(obj, dict):
+                    return {k: convert_paths(v) for k, v in obj.items()}
+                elif isinstance(obj, list):
+                    return [convert_paths(item) for item in obj]
+                elif hasattr(obj, '__str__'):  # This will catch PosixPath and other path-like objects
+                    return str(obj)
+                return obj
+
+            serializable_data = convert_paths(data)
+            
             response = requests.post(
                 callback_url,
-                json=data,
+                json=serializable_data,
                 headers={"Content-Type": "application/json"}
             )
             response.raise_for_status()
