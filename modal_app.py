@@ -51,7 +51,7 @@ results_volume = modal.Volume.from_name("results", create_if_missing=True)
     volumes={CACHE_DIR: cache_volume, RESULTS_DIR: results_volume},
     secrets=[modal.Secret.from_name("huggingface-token")],
     enable_memory_snapshot=True,
-    retries=0,
+    retries=1,
     max_containers=3,
 )
 class OutpaintInference:
