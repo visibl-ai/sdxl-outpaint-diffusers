@@ -72,7 +72,8 @@ class OutpaintInference:
     def _upload_to_url(self, file_path: str, url: str):
         logger.info(f"Uploading to {url}")
         with open(file_path, "rb") as f:
-            response = requests.put(url, data=f.read(), headers={"Content-Type": "image/png"})
+            content_type = guess_image_content_type(file_path)
+            response = requests.put(url, data=f.read(), headers={"Content-Type": content_type})
             response.raise_for_status()
         
         # Extract the base URL by removing query parameters
@@ -225,5 +226,27 @@ async def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(HTT
     if credentials.credentials != OUTPAINT_API_KEY:
         logger.warning("Invalid API key provided")
         raise HTTPException(status_code=401, detail="Invalid API key")
+
+
+def guess_image_content_type(file_path: str) -> str | None:
+    # Initialize common image types explicitly
+    image_mime_types = {
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.png': 'image/png',
+        '.gif': 'image/gif',
+        '.bmp': 'image/bmp',
+        '.webp': 'image/webp',
+        '.tiff': 'image/tiff',
+        '.svg': 'image/svg+xml',
+        '.ico': 'image/vnd.microsoft.icon'
+    }
+
+    # Get the file extension
+    _, ext = os.path.splitext(file_path)
+    ext = ext.lower()
+
+    # Return the matched MIME type or None if not an image
+    return image_mime_types.get(ext)
 
 
