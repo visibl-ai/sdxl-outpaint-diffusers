@@ -31,6 +31,8 @@ import os
 import time
 import datetime
 import logging
+import requests
+import tempfile
 
 # Configure logging early
 logging.basicConfig(
@@ -41,17 +43,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 logger.info(f"Script execution started at: {datetime.datetime.now().isoformat()}")
-
-# Set HuggingFace cache directory before any HF imports
-# This ensures all HF libraries use the same cache location
-CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".cache", "huggingface")
-os.environ['HF_HOME'] = CACHE_DIR
-os.environ['HUGGINGFACE_HUB_CACHE'] = os.path.join(CACHE_DIR, "hub")
-os.environ['TRANSFORMERS_CACHE'] = os.path.join(CACHE_DIR, "transformers")
-os.environ['HF_DATASETS_CACHE'] = os.path.join(CACHE_DIR, "datasets")
-
-# Create cache directory if it doesn't exist
-os.makedirs(CACHE_DIR, exist_ok=True)
 
 # Time imports
 import_start = time.time()
@@ -80,95 +71,152 @@ logger.info(f"  hf_hub_download imported in {time.time() - import_start:.2f}s")
 from controlnet_union import ControlNetModel_Union
 logger.info(f"  ControlNetModel_Union imported in {time.time() - import_start:.2f}s")
 from pipeline_fill_sd_xl import StableDiffusionXLFillPipeline
-logger.info(f"  StableDiffusionXLFillPipeline imported in {time.time() - import_start:.2f}s")
 
 logger.info(f"Total import time: {time.time() - import_start:.2f}s")
 
 logger.info(f"Time since script start: {time.time() - import_start:.2f}s")
 
-# Initialize models and pipeline
-logger.info(f"Starting model initialization at {datetime.datetime.now().isoformat()}...")
-init_start = time.time()
+_MODEL_INITIALIZED = False
+pipe = None  # Global variable for the pipeline
 
-# Download ControlNet config
-logger.info("Downloading ControlNet config...")
-config_start = time.time()
-config_file = hf_hub_download(
-    "xinsir/controlnet-union-sdxl-1.0",
-    filename="config_promax.json",
-)
-logger.info(f"Config download completed in {time.time() - config_start:.2f}s")
+def init_model(*, cache_dir=None):
+    """Initialize model by loading components and moving them to GPU."""
+    global _MODEL_INITIALIZED, pipe
+    if _MODEL_INITIALIZED:
+        return pipe
+    
+    # Ensure CUDA is available
+    if not torch.cuda.is_available():
+        raise RuntimeError("CUDA is not available. This app requires a GPU.")
 
-# Load ControlNet model
-logger.info("Loading ControlNet model...")
-controlnet_start = time.time()
-logger.info("  Loading config...")
-config = ControlNetModel_Union.load_config(config_file)
-logger.info(f"  Config loaded in {time.time() - controlnet_start:.2f}s")
-logger.info("  Creating model from config...")
-controlnet_model = ControlNetModel_Union.from_config(config)
-logger.info(f"  Model created in {time.time() - controlnet_start:.2f}s")
-logger.info("  Downloading model weights...")
-download_start = time.time()
-model_file = hf_hub_download(
-    "xinsir/controlnet-union-sdxl-1.0",
-    filename="diffusion_pytorch_model_promax.safetensors",
-)
-logger.info(f"  Model weights downloaded in {time.time() - download_start:.2f}s")
-logger.info("  Loading state dict...")
-state_dict_start = time.time()
-state_dict = load_state_dict(model_file)
-logger.info(f"  State dict loaded in {time.time() - state_dict_start:.2f}s")
-model, _, _, _, _ = ControlNetModel_Union._load_pretrained_model(
-    controlnet_model, state_dict, model_file, "xinsir/controlnet-union-sdxl-1.0"
-)
-logger.info(f"ControlNet loaded in {time.time() - controlnet_start:.2f}s")
+    # Load model components on CPU first
+    model, vae, pipe = load_model(cache_dir=cache_dir)
 
-# Ensure CUDA is available
-if not torch.cuda.is_available():
-    raise RuntimeError("CUDA is not available. This app requires a GPU.")
+    # Move to GPU and setup
+    pipe = setup_model(model, vae)
+    _MODEL_INITIALIZED = True
 
-# Move model to GPU
-logger.info("Moving ControlNet to GPU...")
-gpu_start = time.time()
-device = "cuda:0"
-model.to(device=device, dtype=torch.float16)
-logger.info(f"ControlNet moved to GPU in {time.time() - gpu_start:.2f}s")
+    return pipe
 
-# Load VAE
-logger.info("Loading VAE...")
-vae_start = time.time()
-logger.info("  Downloading/loading VAE model...")
-vae = AutoencoderKL.from_pretrained(
-    "madebyollin/sdxl-vae-fp16-fix", torch_dtype=torch.float16
-)
-logger.info(f"  VAE loaded in {time.time() - vae_start:.2f}s")
-logger.info("  Moving VAE to GPU...")
-vae_gpu_start = time.time()
-vae = vae.to(device)
-logger.info(f"  VAE moved to GPU in {time.time() - vae_gpu_start:.2f}s")
-logger.info(f"VAE total time: {time.time() - vae_start:.2f}s")
 
-# Load pipeline
-logger.info("Loading StableDiffusion pipeline...")
-pipe_start = time.time()
-logger.info("  Downloading/loading pipeline components...")
-pipe = StableDiffusionXLFillPipeline.from_pretrained(
-    "SG161222/RealVisXL_V5.0_Lightning",
-    torch_dtype=torch.float16,
-    vae=vae,
-    controlnet=model,
-    variant="fp16",
-)
-logger.info(f"  Pipeline created in {time.time() - pipe_start:.2f}s")
-logger.info("  Moving pipeline to GPU...")
-pipe_gpu_start = time.time()
-pipe = pipe.to(device)
+def load_model(*, cache_dir=None, load_pipeline=True):
+    """Load model components on CPU before GPU initialization."""
+    global pipe
+    # Set HuggingFace cache directory before any HF imports
+    # This ensures all HF libraries use the same cache location
+    CACHE_DIR = cache_dir or os.path.join(os.path.dirname(os.path.abspath(__file__)), ".cache", "huggingface")
+    os.environ['HF_HOME'] = CACHE_DIR
+    os.environ['HUGGINGFACE_HUB_CACHE'] = os.path.join(CACHE_DIR, "hub")
+    os.environ['TRANSFORMERS_CACHE'] = os.path.join(CACHE_DIR, "transformers")
+    os.environ['HF_DATASETS_CACHE'] = os.path.join(CACHE_DIR, "datasets")
 
-pipe.scheduler = TCDScheduler.from_config(pipe.scheduler.config)
-logger.info(f"Pipeline loaded in {time.time() - pipe_start:.2f}s")
+    # Create cache directory if it doesn't exist
+    os.makedirs(CACHE_DIR, exist_ok=True)
 
-logger.info(f"Total initialization time: {time.time() - init_start:.2f}s")
+    # Initialize models and pipeline
+    logger.info(f"Starting model loading at {datetime.datetime.now().isoformat()}...")
+    init_start = time.time()
+
+    # Download ControlNet config
+    logger.info("Downloading ControlNet config...")
+    config_start = time.time()
+    config_file = hf_hub_download(
+        "xinsir/controlnet-union-sdxl-1.0",
+        filename="config_promax.json",
+    )
+    logger.info(f"Config download completed in {time.time() - config_start:.2f}s")
+
+    # Load ControlNet model
+    logger.info("Loading ControlNet model...")
+    controlnet_start = time.time()
+    logger.info("  Loading config...")
+    config = ControlNetModel_Union.load_config(config_file)
+    logger.info(f"  Config loaded in {time.time() - controlnet_start:.2f}s")
+    logger.info("  Creating model from config...")
+    controlnet_model = ControlNetModel_Union.from_config(config)
+    logger.info(f"  Model created in {time.time() - controlnet_start:.2f}s")
+    logger.info("  Downloading model weights...")
+    download_start = time.time()
+    model_file = hf_hub_download(
+        "xinsir/controlnet-union-sdxl-1.0",
+        filename="diffusion_pytorch_model_promax.safetensors",
+    )
+    logger.info(f"  Model weights downloaded in {time.time() - download_start:.2f}s")
+    logger.info("  Loading state dict...")
+    state_dict_start = time.time()
+    state_dict = load_state_dict(model_file)
+    logger.info(f"  State dict loaded in {time.time() - state_dict_start:.2f}s")
+    model, _, _, _, _ = ControlNetModel_Union._load_pretrained_model(
+        controlnet_model, state_dict, model_file, "xinsir/controlnet-union-sdxl-1.0"
+    )
+    logger.info(f"ControlNet loaded in {time.time() - controlnet_start:.2f}s")
+
+    # Load VAE
+    logger.info("Loading VAE...")
+    vae_start = time.time()
+    logger.info("  Downloading/loading VAE model...")
+    vae = AutoencoderKL.from_pretrained(
+        "madebyollin/sdxl-vae-fp16-fix", torch_dtype=torch.float16
+    )
+    logger.info(f"  VAE loaded in {time.time() - vae_start:.2f}s")
+
+    # Load pipeline only if requested
+    pipe = None
+    if load_pipeline:
+        logger.info("Loading StableDiffusion pipeline...")
+        pipe_start = time.time()
+        logger.info("  Downloading/loading pipeline components...")
+        pipe = StableDiffusionXLFillPipeline.from_pretrained(
+            "SG161222/RealVisXL_V5.0_Lightning",
+            torch_dtype=torch.float16,
+            vae=vae,
+            controlnet=model,
+            variant="fp16",
+        )
+        logger.info(f"  Pipeline created in {time.time() - pipe_start:.2f}s")
+
+    logger.info(f"Total CPU loading time: {time.time() - init_start:.2f}s")
+    return model, vae, pipe
+
+def setup_model(model, vae):
+    """Move model components to GPU and configure them."""
+    global pipe
+    device = "cuda:0"
+    
+    # Move model to GPU
+    logger.info("Moving ControlNet to GPU...")
+    gpu_start = time.time()
+    model.to(device=device, dtype=torch.float16)
+    logger.info(f"ControlNet moved to GPU in {time.time() - gpu_start:.2f}s")
+
+    # Move VAE to GPU
+    logger.info("Moving VAE to GPU...")
+    vae_gpu_start = time.time()
+    vae = vae.to(device)
+    logger.info(f"VAE moved to GPU in {time.time() - vae_gpu_start:.2f}s")
+
+    # Create or move pipeline to GPU and configure scheduler
+    logger.info("Moving pipeline to GPU...")
+    pipe_gpu_start = time.time()
+    
+    if pipe is None:
+        logger.info("Creating new pipeline...")
+        pipe = StableDiffusionXLFillPipeline.from_pretrained(
+            "SG161222/RealVisXL_V5.0_Lightning",
+            torch_dtype=torch.float16,
+            vae=vae,
+            controlnet=model,
+            variant="fp16",
+        )
+    
+    pipe = pipe.to(device)
+    pipe.scheduler = TCDScheduler.from_config(pipe.scheduler.config)
+    pipe.vae = vae
+    pipe.controlnet = model
+    
+    logger.info(f"Pipeline moved to GPU in {time.time() - pipe_gpu_start:.2f}s")
+
+    return pipe
 
 
 def can_expand(source_width, source_height, target_width, target_height, alignment):
@@ -461,7 +509,11 @@ def outpaint_image(image_path, width=None, height=None, left=None, right=None,
 def process_single_image(config):
     """Process a single image with given configuration."""
     # Validate input file
-    input_path = Path(config['input'])
+    if config['input'].startswith(('http://', 'https://')):
+        input_path = Path(download_and_save_image(config['input']))
+    else:
+        input_path = Path(config['input'])
+
     if not input_path.exists():
         raise FileNotFoundError(f"Input file '{config['input']}' not found")
     
@@ -541,27 +593,49 @@ def process_single_image(config):
     logger.info(f"Total process time: {time.time() - process_start:.2f}s")
     return output_path
 
+def download_and_save_image(url: str) -> str:
+    """Download image from URL and save to a temporary file."""
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        
+        # Create a temporary file with .png extension
+        temp_dir = tempfile.mkdtemp()
+        temp_path = os.path.join(temp_dir, "input.png")
+        
+        with open(temp_path, 'wb') as f:
+            f.write(response.content)
+        
+        return temp_path
+    except Exception as e:
+        raise ValueError(f"Failed to download image from URL: {e}")
 
-def main():
+
+def main(*, is_cli: bool = True, args = None):
     """Main CLI function."""
     logger.info(f"Main function execution started at: {datetime.datetime.now().isoformat()}")
-    args = parse_arguments()
+    if is_cli or args is None:
+        args = parse_arguments()
     
     try:
         if args.batch:
             # Batch mode
-            logger.info(f"Loading batch configuration from: {args.batch}")
-            with open(args.batch, 'r') as f:
-                batch_configs = json.load(f)
-            
-            if not isinstance(batch_configs, list):
-                raise ValueError("Batch config must be a JSON array")
+            if is_cli:
+                logger.info(f"Loading batch configuration from: {args.batch}")
+                with open(args.batch, 'r') as f:
+                    batch_configs = json.load(f)
+            else:
+                batch_configs = args.batch
+                
+                if not isinstance(batch_configs, list):
+                    raise ValueError("Batch config must be a JSON array")
             
             logger.info(f"Processing {len(batch_configs)} images in batch mode")
             batch_start = time.time()
             
             successful = 0
             failed = 0
+            output_paths = []
             
             for i, config in enumerate(batch_configs, 1):
                 logger.info(f"\n{'='*60}")
@@ -570,6 +644,7 @@ def main():
                 try:
                     output_path = process_single_image(config)
                     print(f"✓ Image {i}/{len(batch_configs)}: {output_path}")
+                    output_paths.append(output_path)
                     successful += 1
                 except Exception as e:
                     logger.error(f"Failed to process image {i}: {e}")
@@ -580,7 +655,8 @@ def main():
             logger.info(f"Batch processing completed in {time.time() - batch_start:.2f}s")
             logger.info(f"Successful: {successful}, Failed: {failed}")
             print(f"\nBatch complete: {successful} successful, {failed} failed")
-            
+
+            return output_paths
         else:
             # Single image mode - convert args to config dict
             config = {
@@ -601,6 +677,7 @@ def main():
             
             output_path = process_single_image(config)
             print(f"\nOutpainted image saved to: {output_path}")
+            return [output_path]
             
     except Exception as e:
         logger.error(f"Error: {e}")
@@ -609,4 +686,5 @@ def main():
 
 
 if __name__ == "__main__":
+    init_model()
     main()
