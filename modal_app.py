@@ -49,7 +49,7 @@ results_volume = modal.Volume.from_name("results", create_if_missing=True)
     gpu="A10G",
     timeout=30 * MINUTES,
     volumes={CACHE_DIR: cache_volume, RESULTS_DIR: results_volume},
-    secrets=[modal.Secret.from_name("huggingface-token")],
+    secrets=[modal.Secret.from_name("huggingface-token"), modal.Secret.from_name("callback-token")],
     enable_memory_snapshot=True,
     retries=1,
     max_containers=3,
@@ -160,10 +160,18 @@ class OutpaintInference:
 
             serializable_data = convert_paths(data)
             
+            # Get API token from environment
+            callback_token = os.environ.get("CALLBACK_API_TOKEN")
+            
+            # Prepare headers with token if available
+            headers = {"Content-Type": "application/json"}
+            if callback_token:
+                headers["Authorization"] = f"Bearer {callback_token}"
+            
             response = requests.post(
                 callback_url,
                 json=serializable_data,
-                headers={"Content-Type": "application/json"}
+                headers=headers
             )
             response.raise_for_status()
             logger.info(f"Successfully posted to callback URL: {callback_url}")
