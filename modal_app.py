@@ -49,7 +49,7 @@ results_volume = modal.Volume.from_name("results", create_if_missing=True)
     gpu="A10G",
     timeout=30 * MINUTES,
     volumes={CACHE_DIR: cache_volume, RESULTS_DIR: results_volume},
-    secrets=[modal.Secret.from_name("huggingface-token"), modal.Secret.from_name("callback-token")],
+    secrets=[modal.Secret.from_name("huggingface-token"), modal.Secret.from_name("visibl-secret")],
     enable_memory_snapshot=True,
     retries=1,
     max_containers=3,
@@ -72,7 +72,7 @@ class OutpaintInference:
     def _upload_to_url(self, file_path: str, url: str):
         logger.info(f"Uploading to {url}")
         with open(file_path, "rb") as f:
-            content_type = guess_image_content_type(file_path)
+            content_type = guess_image_content_type(url) or "image/webp"
             response = requests.put(url, data=f.read(), headers={"Content-Type": content_type})
             response.raise_for_status()
         
@@ -139,7 +139,7 @@ class OutpaintInference:
                 logger.info(f"No output URL provided, returning local path: {result_path}")
                 result[result_key] = result_path
             
-            callback_url = batch[i].get("callback_url") if batch else None
+            callback_url = batch[i].get("callback_url") if batch else callback_url
             if callback_url:
                 self._post_to_callback(callback_url, result)
 
@@ -236,6 +236,7 @@ async def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(HTT
         raise HTTPException(status_code=401, detail="Invalid API key")
 
 
+# Should guess content type from a signed URL
 def guess_image_content_type(file_path: str) -> str | None:
     # Initialize common image types explicitly
     image_mime_types = {
@@ -249,6 +250,11 @@ def guess_image_content_type(file_path: str) -> str | None:
         '.svg': 'image/svg+xml',
         '.ico': 'image/vnd.microsoft.icon'
     }
+
+    # Handle URLs by extracting the path component
+    if file_path.startswith(('http://', 'https://')):
+        parsed = urlparse(file_path)
+        file_path = parsed.path
 
     # Get the file extension
     _, ext = os.path.splitext(file_path)
