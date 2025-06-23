@@ -8,7 +8,7 @@ import requests
 from PIL import Image as PILImage
 import io
 
-OutpaintInference = modal.Cls.from_name("outpaint", "OutpaintInference")
+OutpaintInference = modal.Cls.from_name("outpaint-inference", "OutpaintInference")
 infer = OutpaintInference().run_batch
 
 def load_test_input():

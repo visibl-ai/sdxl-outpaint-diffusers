@@ -6,7 +6,6 @@ import time
 import logging
 from fastapi import HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-import torch
 from urllib.parse import urlparse, urlunparse
 
 logging.basicConfig(level=logging.INFO)
@@ -16,7 +15,9 @@ CACHE_DIR = "/cache"
 RESULTS_DIR = "/results"  # Define results directory as absolute path
 MINUTES = 60
 
-app = modal.App("outpaint")
+from modal import App
+
+app = App("outpaint-inference")
 
 # Create the base image and include local dependencies
 image = (
@@ -67,6 +68,7 @@ class OutpaintInference:
         logger.info("Setting up pipeline (without snapshot)")
         self._pipe = setup_model(self._model, self._vae)
         # Clear any unused memory after setup
+        import torch
         torch.cuda.empty_cache()
 
     def _upload_to_url(self, file_path: str, url: str):
@@ -209,31 +211,6 @@ class OutpaintInference:
             if callback_url:
                 self._post_to_callback(callback_url, {"status": "error", "error": str(e)})
             raise e
-
-
-@app.function(image=image, cpu=0.25, memory=512)
-@modal.fastapi_endpoint(method="POST")
-def web(body: dict):
-    """FastAPI endpoint for batched inference"""
-    if not body.get("input"):
-        raise HTTPException(status_code=400, detail="No input provided")
-
-    # Start the batch processing without waiting
-    handle = OutpaintInference().run_batch.spawn(body)
-    logger.info(f"Batch processing started: {handle}")
-    return {"status": "processing", "message": "Batch processing started", "job_id": handle.object_id}
-
-
-async def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer())):
-    OUTPAINT_API_KEY = os.environ.get("OUTPAINT_API_KEY")
-    
-    if not OUTPAINT_API_KEY:
-        logger.error("API key not configured in secrets")
-        raise HTTPException(status_code=500, detail="API key not configured")
-        
-    if credentials.credentials != OUTPAINT_API_KEY:
-        logger.warning("Invalid API key provided")
-        raise HTTPException(status_code=401, detail="Invalid API key")
 
 
 # Should guess content type from a signed URL
