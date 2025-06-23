@@ -141,7 +141,7 @@ class OutpaintInference:
             
             callback_url = batch[i].get("callback_url") if batch else callback_url
             if callback_url:
-                self._post_to_callback(callback_url, result)
+                self._post_to_callback(callback_url, {"status": "completed", "results": [result]})
 
         return result
 
