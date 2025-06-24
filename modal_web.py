@@ -15,7 +15,7 @@ web_image = modal.Image.debian_slim().pip_install("fastapi[standard]", "requests
 
 OutpaintInference = modal.Cls.from_name("outpaint-inference", "OutpaintInference")
 
-@app.function(image=web_image, cpu=0.25, memory=512)
+@app.function(image=web_image, cpu=0.25, memory=512, enable_memory_snapshot=True)
 @modal.fastapi_endpoint(method="POST")
 def run(body: dict):
     """FastAPI endpoint for batched inference"""
