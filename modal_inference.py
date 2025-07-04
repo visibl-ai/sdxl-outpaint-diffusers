@@ -73,10 +73,13 @@ class OutpaintInference:
 
     def _upload_to_url(self, file_path: str, url: str):
         logger.info(f"Uploading to {url}")
+        start_time = time.time()
         with open(file_path, "rb") as f:
             content_type = guess_image_content_type(url) or "image/webp"
             response = requests.put(url, data=f.read(), headers={"Content-Type": content_type})
             response.raise_for_status()
+        upload_time = time.time() - start_time
+        logger.info(f"Upload completed in {upload_time:.2f} seconds")
         
         # Extract the base URL by removing query parameters
         parsed = urlparse(url)
@@ -170,13 +173,15 @@ class OutpaintInference:
             if callback_token:
                 headers["Authorization"] = f"Bearer {callback_token}"
             
+            start_time = time.time()
             response = requests.post(
                 callback_url,
                 json=serializable_data,
                 headers=headers
             )
             response.raise_for_status()
-            logger.info(f"Successfully posted to callback URL: {callback_url}")
+            callback_time = time.time() - start_time
+            logger.info(f"Successfully posted to callback URL: {callback_url} in {callback_time:.2f} seconds")
         except Exception as e:
             logger.error(f"Failed to post to callback URL: {str(e)}", exc_info=True)
 
@@ -200,7 +205,8 @@ class OutpaintInference:
             results = [self.run(**input_dict) for input_dict in filtered_inputs]
 
             # If callback URL is provided, post results
-            if callback_url:
+            DISABLED_BATCH_CALLBACK = True
+            if callback_url and not DISABLED_BATCH_CALLBACK:
                 self._post_to_callback(callback_url, {"status": "completed", "results": results})
 
             # Modal batched function expects a list
