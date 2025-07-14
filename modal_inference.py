@@ -41,9 +41,6 @@ image = (
             "CUDA_VISIBLE_DEVICES": "0",
             "PYTORCH_CUDA_ALLOC_CONF": "max_split_size_mb:512",
             "TORCH_ALLOW_TF32_CUBLAS_OVERRIDE": "1",
-            "MODAL_INFERENCE_APP_ID": os.environ.get(
-                "MODAL_INFERENCE_APP_ID", "outpaint-inference-dev"
-            ),
             "MODAL_BATCH_SIZE": os.environ.get("MODAL_BATCH_SIZE", "50"),
             "MODAL_WAIT_MS": os.environ.get("MODAL_WAIT_MS", "5000"),
             "MODAL_GPU": os.environ.get("MODAL_GPU", "A10G"),
@@ -238,6 +235,9 @@ class OutpaintInference:
         # Use first callback URL for final callback with all results
         callback_url = input[0].get("callback_url") if input else None
         try:
+            # Sort inputs by timestamp to maintain original request order
+            sorted_inputs = sorted(input, key=lambda x: x.get("timestamp", 0))
+
             # Get the valid parameter names from the run method
             valid_params = {
                 "input",
@@ -260,7 +260,7 @@ class OutpaintInference:
             # Filter each input dict to only include valid parameters
             filtered_inputs = [
                 {k: v for k, v in input_dict.items() if k in valid_params}
-                for input_dict in input
+                for input_dict in sorted_inputs
             ]
             results = [self.run(**input_dict) for input_dict in filtered_inputs]
 
