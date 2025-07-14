@@ -7,6 +7,7 @@ import logging
 from fastapi import HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from urllib.parse import urlparse, urlunparse
+from config import settings, modal_settings
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -17,7 +18,7 @@ MINUTES = 60
 
 from modal import App
 
-app = App("outpaint-inference")
+app = App(modal_settings.inference_app_id)
 
 # Create the base image and include local dependencies
 image = (
@@ -47,8 +48,8 @@ results_volume = modal.Volume.from_name("results", create_if_missing=True)
 
 @app.cls(
     image=image,
-    gpu="A10G",
-    timeout=30 * MINUTES,
+    gpu=modal_settings.gpu,
+    timeout=modal_settings.timeout_minutes,
     volumes={CACHE_DIR: cache_volume, RESULTS_DIR: results_volume},
     secrets=[modal.Secret.from_name("huggingface-token"), modal.Secret.from_name("visibl-secret")],
     enable_memory_snapshot=True,
@@ -185,7 +186,7 @@ class OutpaintInference:
         except Exception as e:
             logger.error(f"Failed to post to callback URL: {str(e)}", exc_info=True)
 
-    @modal.batched(max_batch_size=50, wait_ms=5000)
+    @modal.batched(max_batch_size=modal_settings.max_batch_size, wait_ms=modal_settings.wait_ms)
     async def run_batch(self, input: list[dict]) -> list[str]:
         """Process a batch of inference requests"""
         # Use first callback URL for final callback with all results

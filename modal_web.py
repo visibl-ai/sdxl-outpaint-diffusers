@@ -3,17 +3,18 @@ import os
 import logging
 from fastapi import HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from config import settings, modal_settings
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 from modal import App
 
-app = App("outpaint-web")
+app = App(modal_settings.web_app_id)
 
 web_image = modal.Image.debian_slim().pip_install("fastapi[standard]", "requests")
 
-OutpaintInference = modal.Cls.from_name("outpaint-inference", "OutpaintInference")
+OutpaintInference = modal.Cls.from_name(modal_settings.inference_app_id, "OutpaintInference")
 
 @app.function(image=web_image, cpu=0.25, memory=512, enable_memory_snapshot=True)
 @modal.fastapi_endpoint(method="POST")
@@ -29,7 +30,7 @@ def run(body: dict):
 
 
 async def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer())):
-    OUTPAINT_API_KEY = os.environ.get("OUTPAINT_API_KEY")
+    OUTPAINT_API_KEY = settings.api_key
     
     if not OUTPAINT_API_KEY:
         logger.error("API key not configured in secrets")
