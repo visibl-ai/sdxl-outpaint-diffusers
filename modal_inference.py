@@ -30,6 +30,7 @@ image = (
         "apt-get install -y libgl1-mesa-glx libglib2.0-0 libsm6 libxrender1 libxext6",
     )
     .pip_install_from_requirements("requirements.txt")
+    .add_local_file("config.py", "/root/config.py", copy=True)
     .add_local_file("outpaint.py", "/root/outpaint.py", copy=True)
     .add_local_file("pipeline_fill_sd_xl.py", "/root/pipeline_fill_sd_xl.py", copy=True)
     .add_local_file("controlnet_union.py", "/root/controlnet_union.py", copy=True)
@@ -40,6 +41,13 @@ image = (
             "CUDA_VISIBLE_DEVICES": "0",
             "PYTORCH_CUDA_ALLOC_CONF": "max_split_size_mb:512",
             "TORCH_ALLOW_TF32_CUBLAS_OVERRIDE": "1",
+            "MODAL_INFERENCE_APP_ID": os.environ.get(
+                "MODAL_INFERENCE_APP_ID", "outpaint-inference-dev"
+            ),
+            "MODAL_BATCH_SIZE": os.environ.get("MODAL_BATCH_SIZE", "50"),
+            "MODAL_WAIT_MS": os.environ.get("MODAL_WAIT_MS", "5000"),
+            "MODAL_GPU": os.environ.get("MODAL_GPU", "A10G"),
+            "MODAL_TIMEOUT_MINUTES": os.environ.get("MODAL_TIMEOUT_MINUTES", "30"),
         }
     )
 )

@@ -14,7 +14,20 @@ from modal import App
 
 app = App(modal_settings.web_app_id)
 
-web_image = modal.Image.debian_slim().pip_install("fastapi[standard]", "requests")
+web_image = (
+    modal.Image.debian_slim()
+    .pip_install("fastapi[standard]", "requests")
+    .add_local_file("config.py", "/root/config.py", copy=True)
+    .env(
+        {
+            "MODAL_INFERENCE_APP_ID": os.environ.get(
+                "MODAL_INFERENCE_APP_ID", "outpaint-inference-dev"
+            ),
+            "MODAL_WEB_APP_ID": os.environ.get("MODAL_WEB_APP_ID", "outpaint-web-dev"),
+            "MODAL_TIMEOUT_MINUTES": os.environ.get("MODAL_TIMEOUT_MINUTES", "30"),
+        }
+    )
+)
 
 OutpaintInference = modal.Cls.from_name(
     modal_settings.inference_app_id, "OutpaintInference"
