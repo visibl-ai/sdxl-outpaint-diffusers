@@ -64,7 +64,7 @@ results_volume = modal.Volume.from_name("results", create_if_missing=True)
 @app.cls(
     image=image,
     gpu=modal_settings.gpu,
-    timeout=modal_settings.timeout_minutes,
+    timeout=modal_settings.timeout,
     volumes={CACHE_DIR: cache_volume, RESULTS_DIR: results_volume},
     secrets=[
         modal.Secret.from_name("huggingface-token"),

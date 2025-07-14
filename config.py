@@ -10,7 +10,7 @@ class ModalSettings:
         self.max_batch_size = int(os.environ.get("MODAL_BATCH_SIZE", 50))
         self.wait_ms = int(os.environ.get("MODAL_WAIT_MS", 5000))
         self.gpu = os.environ.get("MODAL_GPU", "A10G")
-        self.timeout_minutes = int(os.environ.get("MODAL_TIMEOUT_MINUTES", 30))
+        self.timeout = int(os.environ.get("MODAL_TIMEOUT_MINS", 30)) * 60  # in seconds
 
 
 # TODO: Add more settings here
