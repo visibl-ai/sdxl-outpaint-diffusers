@@ -69,7 +69,7 @@ results_volume = modal.Volume.from_name("results", create_if_missing=True)
     ],
     enable_memory_snapshot=True,
     retries=1,
-    max_containers=3,
+    max_containers=modal_settings.max_containers,
 )
 class OutpaintInference:
     @modal.enter(snap=True)
