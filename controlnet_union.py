@@ -509,9 +509,11 @@ class ControlNetModel_Union(ModelMixin, ConfigMixin, FromOriginalModelMixin):
                 resnet_groups=norm_num_groups,
                 cross_attention_dim=cross_attention_dim,
                 num_attention_heads=num_attention_heads[i],
-                attention_head_dim=attention_head_dim[i]
-                if attention_head_dim[i] is not None
-                else output_channel,
+                attention_head_dim=(
+                    attention_head_dim[i]
+                    if attention_head_dim[i] is not None
+                    else output_channel
+                ),
                 downsample_padding=downsample_padding,
                 use_linear_projection=use_linear_projection,
                 only_cross_attention=only_cross_attention[i],
