@@ -68,25 +68,22 @@ results_volume = modal.Volume.from_name("results", create_if_missing=True)
         modal.Secret.from_name("visibl-secret"),
     ],
     enable_memory_snapshot=True,
+    experimental_options={"enable_gpu_snapshot": True},
     retries=1,
     max_containers=modal_settings.max_containers,
 )
 class OutpaintInference:
     @modal.enter(snap=True)
-    def load_base_models(self):
-        """Load the base models which are snapshot-friendly"""
+    def load(self):
         logger.info("Loading base models (with snapshot)")
         self._model, self._vae, _ = load_model(cache_dir=CACHE_DIR, load_pipeline=False)
 
-    @modal.enter(snap=False)
-    def setup_pipeline(self):
-        """Setup the pipeline which isn't snapshot-friendly"""
-        logger.info("Setting up pipeline (without snapshot)")
         self._pipe = setup_model(self._model, self._vae)
         # Clear any unused memory after setup
-        import torch
+        # Do we still need this?
+        # import torch
 
-        torch.cuda.empty_cache()
+        # torch.cuda.empty_cache()
 
     def _upload_to_url(self, file_path: str, url: str):
         logger.info(f"Uploading to {url}")
@@ -237,6 +234,7 @@ class OutpaintInference:
         try:
             # Sort inputs by timestamp to maintain original request order
             sorted_inputs = sorted(input, key=lambda x: x.get("timestamp", 0))
+            print(f"Sorted inputs: {[x.get('timestamp') for x in sorted_inputs]}")
 
             # Get the valid parameter names from the run method
             valid_params = {
