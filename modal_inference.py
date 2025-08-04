@@ -41,10 +41,10 @@ image = (
             "CUDA_VISIBLE_DEVICES": "0",
             "PYTORCH_CUDA_ALLOC_CONF": "max_split_size_mb:512",
             "TORCH_ALLOW_TF32_CUBLAS_OVERRIDE": "1",
-            "MODAL_BATCH_SIZE": os.environ.get("MODAL_BATCH_SIZE", "50"),
-            "MODAL_WAIT_MS": os.environ.get("MODAL_WAIT_MS", "5000"),
+            "MODAL_BATCH_SIZE": os.environ.get("MODAL_BATCH_SIZE", "10"),
+            "MODAL_WAIT_MS": os.environ.get("MODAL_WAIT_MS", "500"),
             "MODAL_GPU": os.environ.get("MODAL_GPU", "A10G"),
-            "MODAL_TIMEOUT_MINUTES": os.environ.get("MODAL_TIMEOUT_MINUTES", "30"),
+            "MODAL_TIMEOUT_MINUTES": os.environ.get("MODAL_TIMEOUT_MINUTES", "3"),
         }
     )
 )
