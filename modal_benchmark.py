@@ -9,7 +9,7 @@ import modal
 import requests
 from PIL import Image as PILImage
 
-OutpaintInference = modal.Cls.from_name("outpaint-inference", "OutpaintInference")
+OutpaintInference = modal.Cls.from_name("outpaint-inference-dev", "OutpaintInference")
 infer = OutpaintInference().run_batch
 
 

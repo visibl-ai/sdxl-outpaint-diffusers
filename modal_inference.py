@@ -18,6 +18,9 @@ CACHE_DIR = "/cache"
 RESULTS_DIR = "/results"  # Define results directory as absolute path
 MINUTES = 60
 
+CACHE_VOLUME_NAME = os.environ.get("MODAL_CACHE_VOLUME_NAME", "sdxl-outpaint-cache")
+RESULTS_VOLUME_NAME = os.environ.get("MODAL_RESULTS_VOLUME_NAME", "results")
+
 from modal import App
 
 app = App(modal_settings.inference_app_id)
@@ -54,8 +57,8 @@ from outpaint import download_and_save_image, load_model
 from outpaint import main as inference_fn
 from outpaint import setup_model
 
-cache_volume = modal.Volume.from_name("hf-hub-cache", create_if_missing=True)
-results_volume = modal.Volume.from_name("results", create_if_missing=True)
+cache_volume = modal.Volume.from_name(CACHE_VOLUME_NAME, create_if_missing=True)
+results_volume = modal.Volume.from_name(RESULTS_VOLUME_NAME, create_if_missing=True)
 
 
 @app.cls(
